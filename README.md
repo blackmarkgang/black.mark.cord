@@ -1,2 +1,2 @@
-# black.mark.cord
-free discord nitro &amp; orb quests abuse
+# 💢 black.mark.cord 💢
+Free discord nitro &amp; Orb quests abuse
