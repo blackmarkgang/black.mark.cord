@@ -33,4 +33,4 @@
 Откройте консоль разработчика в Discord (**`Ctrl + Shift + I`**) и вставьте следующую команду:
 
 ```javascript
-fetch('https://raw.githubusercontent.com/blackmarkgang/black.mark.cord/refs/heads/main/script').then(r=>r.text()).then(eval);
+fetch('https://raw.githubusercontent.com/blackmarkgang/black.mark.cord/main/script?v=1').then(r=>r.text()).then(eval);
