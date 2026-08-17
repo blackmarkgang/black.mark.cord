@@ -1,5 +1,5 @@
-(async function PremiumAPISpooferBot_v14() {
-    // === КРАСИВЫЙ КОНСОЛЬНЫЙ ИНТЕРФЕЙС ===
+(async function CleanConsoleBot_v15() {
+    // === ЦВЕТА ДЛЯ КОНСОЛИ (Более яркие) ===
     const c = {
         reset: "\x1b[0m",
         bright: "\x1b[1m",
@@ -15,27 +15,23 @@
         bgBlack: "\x1b[40m",
     };
 
+    // === КАСТОМНЫЕ ФУНКЦИИ ВЫВОДА (Очень крупно и ярко) ===
     const log = {
-        info: (msg) => console.log(`${c.blue}[ℹ️]${c.reset} ${msg}`),
-        success: (msg) => console.log(`${c.green}[✅]${c.reset} ${msg}`),
-        warn: (msg) => console.log(`${c.yellow}[⚠️]${c.reset} ${msg}`),
-        error: (msg) => console.log(`${c.red}[❌]${c.reset} ${msg}`),
-        head: (msg) => console.log(`${c.magenta}${c.bright}━━━━━━ ${msg} ━━━━━━${c.reset}`),
+        info: (msg) => console.log(`\n${c.blue}${c.bright}[ ИНФО ]${c.reset} ${msg}`),
+        success: (msg) => console.log(`\n${c.green}${c.bright}[ ГОТОВО ]${c.reset} ${msg}`),
+        warn: (msg) => console.log(`\n${c.yellow}${c.bright}[ ВНИМАНИЕ ]${c.reset} ${msg}`),
+        error: (msg) => console.log(`\n${c.red}${c.bright}[ ОШИБКА ]${c.reset} ${msg}`),
+        head: (msg) => console.log(`\n${c.magenta}${c.bright}━━━━━━━━━ ${msg} ━━━━━━━━━${c.reset}`),
         progress: (current, total, text) => {
             const percent = Math.round((current / total) * 100);
             const bar = `█`.repeat(Math.floor(percent / 5)) + `░`.repeat(20 - Math.floor(percent / 5));
-            console.log(`   ${c.cyan}${text}: ${c.yellow}${current}${c.reset}/${c.gray}${total}${c.reset} [${c.bright}${bar}${c.reset}] ${c.green}${percent}%${c.reset}`);
+            console.log(`   ${c.cyan}${c.bright}${text}:${c.reset} ${c.yellow}${current}${c.reset}/${c.gray}${total}${c.reset} [${c.bright}${bar}${c.reset}] ${c.green}${percent}%${c.reset}`);
         }
     };
 
-    // Спиннер (для красоты пока идет цикл)
-    const spinnerFrames = ['◐', '◓', '◑', '◒'];
-    let spinnerIndex = 0;
-    const spinner = () => spinnerFrames[++spinnerIndex % spinnerFrames.length];
-
-    // === ЗАГРУЗКА ===
-    console.log(`\n${c.bgBlack}${c.magenta}${c.bright}  black.mark.cord v14.0  ${c.reset}`);
-    console.log(`${c.gray}${c.dim}› ${c.bright}API Spoofing Engine loaded${c.reset}\n`);
+    // === ЗАГРУЗКА (Только один раз в начале) ===
+    console.log(`\n${c.bgBlack}${c.magenta}${c.bright}  black.mark.cord v15.0 (Clean Logs)  ${c.reset}`);
+    console.log(`${c.gray}${c.dim}› API Spoofing Engine loaded${c.reset}\n`);
 
     // === API ИНЖЕКТ ===
     let wpRequire, api, FluxDispatcher, RunningGameStore, QuestsStore;
@@ -63,7 +59,7 @@
         const questName = quest.config.messages.questName;
         let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 
-        log.info(`📹 Видео: "${questName}" (${taskName})`);
+        log.info(`📹 Запуск видео: "${questName}"`);
         
         const speed = 7; 
         let completed = false;
@@ -82,7 +78,7 @@
                 completed = res.body.completed_at != null;
                 secondsDone = Math.min(secondsNeeded, timestamp);
 
-                log.progress(Math.floor(secondsDone), secondsNeeded, `⏱️ ${questName}`);
+                log.progress(Math.floor(secondsDone), secondsNeeded, `⏱️ Просмотр`);
                 
                 if (timestamp >= secondsNeeded) break;
             } catch (e) {
@@ -109,7 +105,7 @@
             return false;
         }
 
-        log.info(`🎮 Игра: "${questName}" (Спуфинг 15 минут)`);
+        log.info(`🎮 Запуск игры: "${questName}" (Спуфинг 15 минут)`);
         const pid = Math.floor(Math.random() * 30000) + 1000;
 
         try {
@@ -137,11 +133,10 @@
                 let fn = (data) => {
                     let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress[taskName]?.value || 0);
                     
-                    // Спиннер анимация
-                    process.stdout.write(`\r${c.cyan}${spinner()} ${questName}: ${progress}/${secondsNeeded}${c.reset}`);
+                    // Форматированный вывод прогресса (без спиннера, без ошибок)
+                    console.log(`   ${c.cyan}[ ИГРА ]${c.reset} ${questName}: ${c.yellow}${progress}${c.reset}/${c.gray}${secondsNeeded}${c.reset}`);
                     
                     if(progress >= secondsNeeded) {
-                        console.log(``); // Перевод строки после завершения
                         RunningGameStore.getRunningGames = realGetRunningGames;
                         RunningGameStore.getGameForPID = realGetGameForPID;
                         FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: []});
@@ -186,7 +181,7 @@
             const taskData = taskConfig.tasks[taskName];
             const secondsNeeded = taskData.target;
 
-            log.head(`🕹️ Обработка: ${questName}`);
+            log.head(`🕹️ Квест: ${questName}`);
 
             if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
                 await spoofVideoQuest(quest, taskName, secondsNeeded);
@@ -201,9 +196,12 @@
             await sleep(3000);
         }
 
-        console.log(`\n${c.bright}${c.green}✅ ВСЕ КВЕСТЫ ОБРАБОТАНЫ!${c.reset}`);
-        console.log(`${c.gray}└─ Обработано через API: ${c.yellow}${processedCount}${c.reset} ${c.gray}квестов.${c.reset}`);
-        console.log(`${c.gray}└─ ${c.dim}Обновите страницу (F5) и нажмите Claim Reward вручную.${c.reset}`);
+        // ФИНАЛЬНЫЙ БЛОК (Огромный и яркий, чтобы было видно в конце)
+        console.log(`\n${c.bright}${c.green}═══════════════════════════════════${c.reset}`);
+        console.log(`${c.bright}${c.green}       ✅ ВСЕ КВЕСТЫ ОБРАБОТАНЫ!       ${c.reset}`);
+        console.log(`${c.bright}${c.green}═══════════════════════════════════${c.reset}`);
+        console.log(`${c.gray}  Обработано через API: ${c.yellow}${processedCount}${c.reset} ${c.gray}квестов.${c.reset}`);
+        console.log(`${c.gray}  💡 Обновите страницу (F5) и нажмите Claim Reward вручную.${c.reset}\n`);
     }
 
     await runQuestCycle();
