@@ -1,0 +1,181 @@
+(async function FullAPISpooferBot_v13() {
+    console.log("%c💢 black.mark.cord v1.0 💢 ", "color: #ff00ff; font-weight: bold; font-size: 16px;");
+    console.log("💸 Free discord nitro & 🪩 Orb quests abuse");
+
+    // --- 1. ПОДКЛЮЧЕНИЕ К API DISCORD ---
+    console.log("🔌 Инициализация API Discord...");
+    let wpRequire, api, FluxDispatcher, RunningGameStore, QuestsStore;
+
+    try {
+        delete window.$;
+        wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+        webpackChunkdiscord_app.pop();
+
+        RunningGameStore = Object.values(wpRequire.c).find(x => x?.exports?.Ay?.getRunningGames).exports.Ay;
+        QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest).exports.A;
+        FluxDispatcher = Object.values(wpRequire.c).find(x => x?.exports?.h?.__proto__?.flushWaitQueue).exports.h;
+        api = Object.values(wpRequire.c).find(x => x?.exports?.Bo?.get).exports.Bo;
+        
+        console.log("✅ API Discord подключен!");
+    } catch (e) {
+        console.error("❌ Ошибка внедрения. Скрипт работает только в Desktop App.");
+        return;
+    }
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // --- 2. ФУНКЦИЯ СПУФИНГА ВИДЕО (ВКЛЮЧАЯ WATCH_ON_MOBILE) ---
+    async function spoofVideoQuest(quest, taskName, secondsNeeded) {
+        const questName = quest.config.messages.questName;
+        let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
+
+        console.log(`📹 [API ВИДЕО] Спуфим просмотр для "${questName}" (${taskName})`);
+        
+        // Скорость, с которой мы будем "отправлять" просмотр на сервер (7 секунд за раз)
+        const speed = 7; 
+        let completed = false;
+
+        while (true) {
+            const remaining = Math.min(speed, secondsNeeded - secondsDone);
+            await sleep(remaining * 1000); // Небольшая задержка, чтобы сервер не заподозрил неладное
+
+            const timestamp = secondsDone + speed;
+            try {
+                // Отправляем фейковый прогресс просмотра на сервер
+                const res = await api.post({
+                    url: `/quests/${quest.id}/video-progress`, 
+                    body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())} // Добавляем рандом, чтобы было "по-человечески"
+                });
+                
+                completed = res.body.completed_at != null;
+                secondsDone = Math.min(secondsNeeded, timestamp);
+
+                console.log(`⏱️ Прогресс "${questName}": ${Math.floor(secondsDone)}/${secondsNeeded}`);
+                
+                if (timestamp >= secondsNeeded) {
+                    break;
+                }
+            } catch (e) {
+                console.log(`⚠️ Ошибка отправки прогресса, пробуем снова...`);
+            }
+        }
+
+        if (!completed) {
+            // Если вдруг не засчитало, отправляем финальный пакет
+            await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: secondsNeeded}});
+        }
+        
+        console.log(`✅ Видео-квест "${questName}" полностью засчитан через API!`);
+        return true;
+    }
+
+    // --- 3. ФУНКЦИЯ СПУФИНГА ИГРЫ ---
+    async function spoofGameQuest(quest, taskName, secondsNeeded) {
+        const questName = quest.config.messages.questName;
+        const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
+        const taskData = taskConfig.tasks[taskName];
+        const applicationId = quest.config.application?.id ?? taskData.applications?.[0]?.id;
+
+        if(!applicationId) {
+            console.log(`❌ Нет applicationId для "${questName}"`);
+            return false;
+        }
+
+        const pid = Math.floor(Math.random() * 30000) + 1000;
+
+        try {
+            const res = await api.get({url: `/applications/public?application_ids=${applicationId}`});
+            const appData = res.body[0];
+            if(!appData) return false;
+
+            const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "");
+            const fakeGame = {
+                cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
+                exeName: exeName, exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
+                hidden: false, isLauncher: false, id: applicationId, name: appData.name,
+                pid: pid, pidPath: [pid], processName: appData.name, start: Date.now(),
+            };
+
+            const realGames = RunningGameStore.getRunningGames();
+            const realGetRunningGames = RunningGameStore.getRunningGames;
+            const realGetGameForPID = RunningGameStore.getGameForPID;
+
+            RunningGameStore.getRunningGames = () => [fakeGame];
+            RunningGameStore.getGameForPID = (pid) => [fakeGame].find(x => x.pid === pid);
+            FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: [fakeGame]});
+
+            return new Promise((resolve) => {
+                let fn = (data) => {
+                    let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress[taskName]?.value || 0);
+                    console.log(`⏱️ "${questName}": ${progress}/${secondsNeeded}`);
+                    
+                    if(progress >= secondsNeeded) {
+                        RunningGameStore.getRunningGames = realGetRunningGames;
+                        RunningGameStore.getGameForPID = realGetGameForPID;
+                        FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: []});
+                        FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
+                        console.log(`✅ Игра "${questName}" засчитана!`);
+                        resolve(true);
+                    }
+                };
+                FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
+                setTimeout(() => resolve(false), 45000); // Таймаут 45 секунд, если что-то пошло не так
+            });
+        } catch (e) {
+            console.error(`❌ Ошибка спуфинга игры:`, e);
+            return false;
+        }
+    }
+
+    // --- 4. ОСНОВНОЙ ЦИКЛ ---
+    async function runQuestCycle() {
+        console.log("\n🔄 Сканируем квесты через API...");
+        
+        const supportedTasks = ["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE", "PLAY_ON_DESKTOP", "PLAY_ACTIVITY"];
+        
+        let quests = [...QuestsStore.quests.values()].filter(x => 
+            x.userStatus?.enrolledAt && 
+            !x.userStatus?.completedAt && 
+            new Date(x.config.expiresAt).getTime() > Date.now() && 
+            supportedTasks.find(y => Object.keys((x.config.taskConfig ?? x.config.taskConfigV2).tasks).includes(y))
+        );
+
+        if(quests.length === 0) {
+            console.log("🎉 Нет активных квестов!");
+            return;
+        }
+
+        let processedCount = 0;
+
+        for (const quest of quests) {
+            const questName = quest.config.messages.questName;
+            const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
+            const taskName = supportedTasks.find(x => taskConfig.tasks[x] != null);
+            const taskData = taskConfig.tasks[taskName];
+            const secondsNeeded = taskData.target;
+
+            console.log(`\n🔍 Квест: "${questName}" (Тип: ${taskName})`);
+
+            if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
+                // ОБРАБОТКА ВИДЕО (Вкл. Телефон)
+                await spoofVideoQuest(quest, taskName, secondsNeeded);
+                processedCount++;
+
+            } else if (taskName === "PLAY_ON_DESKTOP" || taskName === "PLAY_ACTIVITY") {
+                // ОБРАБОТКА ИГР
+                const result = await spoofGameQuest(quest, taskName, secondsNeeded);
+                if (result) processedCount++;
+                
+            } else {
+                console.log(`⚠️ Тип квеста не поддерживается: ${taskName}`);
+            }
+
+            await sleep(3000); // Небольшая пауза между квестами
+        }
+
+        console.log(`\n✅ Всего обработано через API: ${processedCount} квестов.`);
+        console.log("💡 Награды не собраны. Теперь вручную нажмите 'Claim Reward' на каждом квесте!");
+    }
+
+    await runQuestCycle();
+})();
