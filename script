@@ -1,9 +1,7 @@
-(async function FullAPISpooferBot_v13() {
+(async function FullAPISpooferBot() {
     console.log("%c💢 black.mark.cord v1.0 💢 ", "color: #ff00ff; font-weight: bold; font-size: 16px;");
     console.log("💸 Free discord nitro & 🪩 Orb quests abuse");
 
-    // --- 1. ПОДКЛЮЧЕНИЕ К API DISCORD ---
-    console.log("🔌 Инициализация API Discord...");
     let wpRequire, api, FluxDispatcher, RunningGameStore, QuestsStore;
 
     try {
@@ -18,58 +16,53 @@
         
         console.log("✅ API Discord подключен!");
     } catch (e) {
-        console.error("❌ Ошибка внедрения. Скрипт работает только в Desktop App.");
+        console.error("❌ Ошибка. Скрипт работает только в Desktop App.");
         return;
     }
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // --- 2. ФУНКЦИЯ СПУФИНГА ВИДЕО (ВКЛЮЧАЯ WATCH_ON_MOBILE) ---
+    // --- СПУФИНГ ВИДЕО (Вкл. WATCH_ON_MOBILE) ---
     async function spoofVideoQuest(quest, taskName, secondsNeeded) {
         const questName = quest.config.messages.questName;
         let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 
-        console.log(`📹 [API ВИДЕО] Спуфим просмотр для "${questName}" (${taskName})`);
+        console.log(`📹 [ВИДЕО] Спуфим: "${questName}"`);
         
-        // Скорость, с которой мы будем "отправлять" просмотр на сервер (7 секунд за раз)
         const speed = 7; 
         let completed = false;
 
         while (true) {
             const remaining = Math.min(speed, secondsNeeded - secondsDone);
-            await sleep(remaining * 1000); // Небольшая задержка, чтобы сервер не заподозрил неладное
+            await sleep(remaining * 1000);
 
             const timestamp = secondsDone + speed;
             try {
-                // Отправляем фейковый прогресс просмотра на сервер
                 const res = await api.post({
                     url: `/quests/${quest.id}/video-progress`, 
-                    body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())} // Добавляем рандом, чтобы было "по-человечески"
+                    body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}
                 });
                 
                 completed = res.body.completed_at != null;
                 secondsDone = Math.min(secondsNeeded, timestamp);
 
-                console.log(`⏱️ Прогресс "${questName}": ${Math.floor(secondsDone)}/${secondsNeeded}`);
+                console.log(`⏱️ Прогресс: ${Math.floor(secondsDone)}/${secondsNeeded}`);
                 
-                if (timestamp >= secondsNeeded) {
-                    break;
-                }
+                if (timestamp >= secondsNeeded) break;
             } catch (e) {
-                console.log(`⚠️ Ошибка отправки прогресса, пробуем снова...`);
+                console.log(`⚠️ Ошибка отправки, пробуем снова...`);
             }
         }
 
         if (!completed) {
-            // Если вдруг не засчитало, отправляем финальный пакет
             await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: secondsNeeded}});
         }
         
-        console.log(`✅ Видео-квест "${questName}" полностью засчитан через API!`);
+        console.log(`✅ Видео засчитано!`);
         return true;
     }
 
-    // --- 3. ФУНКЦИЯ СПУФИНГА ИГРЫ ---
+    // --- СПУФИНГ ИГРЫ ---
     async function spoofGameQuest(quest, taskName, secondsNeeded) {
         const questName = quest.config.messages.questName;
         const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
@@ -77,7 +70,7 @@
         const applicationId = quest.config.application?.id ?? taskData.applications?.[0]?.id;
 
         if(!applicationId) {
-            console.log(`❌ Нет applicationId для "${questName}"`);
+            console.log(`❌ Нет App ID для "${questName}"`);
             return false;
         }
 
@@ -107,19 +100,19 @@
             return new Promise((resolve) => {
                 let fn = (data) => {
                     let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress[taskName]?.value || 0);
-                    console.log(`⏱️ "${questName}": ${progress}/${secondsNeeded}`);
+                    console.log(`⏱️ Игра: ${progress}/${secondsNeeded}`);
                     
                     if(progress >= secondsNeeded) {
                         RunningGameStore.getRunningGames = realGetRunningGames;
                         RunningGameStore.getGameForPID = realGetGameForPID;
                         FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: []});
                         FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
-                        console.log(`✅ Игра "${questName}" засчитана!`);
+                        console.log(`✅ Игра засчитана!`);
                         resolve(true);
                     }
                 };
                 FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
-                setTimeout(() => resolve(false), 45000); // Таймаут 45 секунд, если что-то пошло не так
+                setTimeout(() => resolve(false), 45000);
             });
         } catch (e) {
             console.error(`❌ Ошибка спуфинга игры:`, e);
@@ -127,9 +120,9 @@
         }
     }
 
-    // --- 4. ОСНОВНОЙ ЦИКЛ ---
+    // --- ОСНОВНОЙ ЦИКЛ ---
     async function runQuestCycle() {
-        console.log("\n🔄 Сканируем квесты через API...");
+        console.log("\n🔄 Сканируем квесты...");
         
         const supportedTasks = ["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE", "PLAY_ON_DESKTOP", "PLAY_ACTIVITY"];
         
@@ -154,28 +147,27 @@
             const taskData = taskConfig.tasks[taskName];
             const secondsNeeded = taskData.target;
 
-            console.log(`\n🔍 Квест: "${questName}" (Тип: ${taskName})`);
+            console.log(`\n🔍 Квест: "${questName}" (${taskName})`);
 
             if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
-                // ОБРАБОТКА ВИДЕО (Вкл. Телефон)
                 await spoofVideoQuest(quest, taskName, secondsNeeded);
                 processedCount++;
-
             } else if (taskName === "PLAY_ON_DESKTOP" || taskName === "PLAY_ACTIVITY") {
-                // ОБРАБОТКА ИГР
                 const result = await spoofGameQuest(quest, taskName, secondsNeeded);
                 if (result) processedCount++;
-                
             } else {
-                console.log(`⚠️ Тип квеста не поддерживается: ${taskName}`);
+                console.log(`⚠️ Не поддерживается: ${taskName}`);
             }
 
-            await sleep(3000); // Небольшая пауза между квестами
+            await sleep(3000);
         }
 
-        console.log(`\n✅ Всего обработано через API: ${processedCount} квестов.`);
-        console.log("💡 Награды не собраны. Теперь вручную нажмите 'Claim Reward' на каждом квесте!");
+        console.log(`\n✅ Обработано через API: ${processedCount} квестов.`);
+        console.log("💡 Теперь обновите страницу (F5) и вручную нажмите Claim Reward на каждом квесте.");
     }
+
+    await runQuestCycle();
+})();
 
     await runQuestCycle();
 })();
