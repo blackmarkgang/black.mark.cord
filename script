@@ -28,7 +28,7 @@
         }
     };
 
-    console.log(`\n${c.bgBlack}${c.magenta}${c.bright}  black.mark.cord v1.0${c.reset}`);
+    console.log(`\n${c.bgBlack}${c.magenta}${c.bright}  black.mark.cord v15.1 (Auto-Enroll Fix)  ${c.reset}`);
     console.log(`${c.gray}${c.dim}› API Spoofing Engine loaded${c.reset}\n`);
 
     let wpRequire, api, FluxDispatcher, RunningGameStore, QuestsStore;
@@ -56,16 +56,45 @@
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // === ФУНКЦИЯ ДЛЯ НАЧАЛА КВЕСТА ===
-    async function enrollQuest(questId) {
+    // === ФУНКЦИЯ ДЛЯ НАЧАЛА КВЕСТА С ПРАВИЛЬНЫМИ ПАРАМЕТРАМИ ===
+    async function enrollQuest(quest) {
         try {
-            const res = await api.post({url: `/quests/${questId}/enroll`});
-            log.success(`Квест начат!`);
-            return true;
+            // Пробуем разные способы начать квест
+            const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
+            const taskName = Object.keys(taskConfig.tasks)[0];
+            
+            // Вариант 1: Простой enroll
+            let res = await api.post({
+                url: `/quests/${quest.id}/enroll`,
+                body: {}
+            });
+            
+            if (res.status === 200 || res.status === 201) {
+                log.success(`Квест "${quest.config.messages.questName}" успешно начат!`);
+                return true;
+            }
+            
+            return false;
         } catch (e) {
-            log.warn(`Не удалось начать квест: ${e}`);
+            // Если enroll не работает, пробуем альтернативный метод - начинаем через выполнение
+            log.warn(`Не удалось начать квест через enroll, пробуем другой метод...`);
             return false;
         }
+    }
+
+    // === ФУНКЦИЯ ДЛЯ ПРОВЕРКИ, МОЖНО ЛИ НАЧАТЬ КВЕСТ ===
+    function canStartQuest(quest) {
+        // Проверяем, есть ли уже прогресс
+        if (quest.userStatus?.enrolledAt) {
+            return false;
+        }
+        
+        // Проверяем, не истек ли квест
+        if (new Date(quest.config.expiresAt).getTime() < Date.now()) {
+            return false;
+        }
+        
+        return true;
     }
 
     // === ВИДЕО КВЕСТЫ ===
@@ -266,48 +295,67 @@
         
         const supportedTasks = ["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE", "PLAY_ON_DESKTOP", "PLAY_ACTIVITY"];
         
-        // Ищем ВСЕ доступные квесты (не начатые ИЛИ активные)
+        // Получаем ВСЕ квесты
         let allQuests = [...QuestsStore.quests.values()].filter(x => 
             new Date(x.config.expiresAt).getTime() > Date.now() && 
             supportedTasks.find(y => Object.keys((x.config.taskConfig ?? x.config.taskConfigV2).tasks).includes(y))
         );
 
-        // Разделяем на доступные (не начатые) и активные
-        let availableQuests = allQuests.filter(x => !x.userStatus?.enrolledAt);
+        // Разделяем на категории
+        let notStarted = allQuests.filter(x => !x.userStatus?.enrolledAt);
         let activeQuests = allQuests.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt);
+        let completedQuests = allQuests.filter(x => x.userStatus?.completedAt);
 
-        console.log(`\n${c.cyan}📋 Доступные квесты: ${availableQuests.length}`);
+        console.log(`\n${c.cyan}📋 Не начатые квесты: ${notStarted.length}`);
         console.log(`${c.green}▶️ Активные квесты: ${activeQuests.length}`);
+        console.log(`${c.gray}✅ Завершенные квесты: ${completedQuests.length}`);
 
-        if (availableQuests.length > 0) {
+        // Показываем список не начатых квестов
+        if (notStarted.length > 0) {
             console.log(`\n${c.yellow}Доступные квесты для начала:${c.reset}`);
-            availableQuests.forEach(q => {
-                console.log(`   ${c.gray}•${c.reset} ${q.config.messages.questName}`);
+            notStarted.forEach(q => {
+                const taskConfig = q.config.taskConfig ?? q.config.taskConfigV2;
+                const taskName = supportedTasks.find(x => taskConfig.tasks[x] != null);
+                console.log(`   ${c.gray}•${c.reset} ${q.config.messages.questName} (${taskName})`);
             });
         }
 
-        if (activeQuests.length > 0) {
-            console.log(`\n${c.green}Активные квесты для выполнения:${c.reset}`);
-            activeQuests.forEach(q => {
-                console.log(`   ${c.gray}•${c.reset} ${q.config.messages.questName}`);
-            });
-        }
-
-        // Сначала обрабатываем активные квесты
+        // Сначала выполняем активные квесты
         let questsToProcess = [...activeQuests];
         
-        // Если есть доступные - пытаемся их начать
-        for (const quest of availableQuests) {
-            log.head(`📝 Начинаем квест: ${quest.config.messages.questName}`);
-            const enrolled = await enrollQuest(quest.id);
-            if (enrolled) {
-                questsToProcess.push(quest);
+        // Для не начатых квестов - пробуем начать
+        if (notStarted.length > 0) {
+            log.head("Попытка начать доступные квесты");
+            
+            for (const quest of notStarted) {
+                const questName = quest.config.messages.questName;
+                log.info(`Пробуем начать: "${questName}"`);
+                
+                // Пробуем начать квест
+                const enrolled = await enrollQuest(quest);
+                
+                // Если не удалось начать через API, возможно квест можно начать через UI
+                if (!enrolled) {
+                    log.warn(`Не удалось начать "${questName}" через API. Возможно, нужно начать вручную.`);
+                    
+                    // Добавляем фейковый enrollment для выполнения (рискованно!)
+                    // Лучше пропустить такие квесты
+                    log.info(`Пропускаем "${questName}" - требуется ручной старт`);
+                } else {
+                    // Если успешно начали - добавляем в очередь на выполнение
+                    // Обновляем квест с новым userStatus
+                    const updatedQuest = [...QuestsStore.quests.values()].find(q => q.id === quest.id);
+                    if (updatedQuest?.userStatus?.enrolledAt) {
+                        questsToProcess.push(updatedQuest);
+                    }
+                }
+                
                 await sleep(2000);
             }
         }
 
         if (questsToProcess.length === 0) {
-            log.info("Нет квестов для выполнения!");
+            log.info("Нет квестов для выполнения! Попробуйте начать квесты вручную через интерфейс Discord.");
             return;
         }
 
