@@ -1,5 +1,5 @@
 (async function CleanConsoleBot_v15() {
-    // === ЦВЕТА ДЛЯ КОНСОЛИ (Более яркие) ===
+    // === ЦВЕТА ДЛЯ КОНСОЛИ ===
     const c = {
         reset: "\x1b[0m",
         bright: "\x1b[1m",
@@ -15,7 +15,6 @@
         bgBlack: "\x1b[40m",
     };
 
-    // === КАСТОМНЫЕ ФУНКЦИИ ВЫВОДА (Очень крупно и ярко) ===
     const log = {
         info: (msg) => console.log(`\n${c.blue}${c.bright}[ ИНФО ]${c.reset} ${msg}`),
         success: (msg) => console.log(`\n${c.green}${c.bright}[ ГОТОВО ]${c.reset} ${msg}`),
@@ -29,11 +28,9 @@
         }
     };
 
-    // === ЗАГРУЗКА (Только один раз в начале) ===
-    console.log(`\n${c.bgBlack}${c.magenta}${c.bright}  black.mark.cord v15.0 (Clean Logs)  ${c.reset}`);
+    console.log(`\n${c.bgBlack}${c.magenta}${c.bright}  black.mark.cord v1.0${c.reset}`);
     console.log(`${c.gray}${c.dim}› API Spoofing Engine loaded${c.reset}\n`);
 
-    // === API ИНЖЕКТ ===
     let wpRequire, api, FluxDispatcher, RunningGameStore, QuestsStore;
 
     try {
@@ -41,27 +38,45 @@
         wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
         webpackChunkdiscord_app.pop();
 
-        RunningGameStore = Object.values(wpRequire.c).find(x => x?.exports?.Ay?.getRunningGames).exports.Ay;
-        QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest).exports.A;
-        FluxDispatcher = Object.values(wpRequire.c).find(x => x?.exports?.h?.__proto__?.flushWaitQueue).exports.h;
-        api = Object.values(wpRequire.c).find(x => x?.exports?.Bo?.get).exports.Bo;
+        RunningGameStore = Object.values(wpRequire.c).find(x => x?.exports?.Ay?.getRunningGames)?.exports?.Ay;
+        QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports?.A;
+        FluxDispatcher = Object.values(wpRequire.c).find(x => x?.exports?.h?.__proto__?.flushWaitQueue)?.exports?.h;
+        api = Object.values(wpRequire.c).find(x => x?.exports?.Bo?.get)?.exports?.Bo;
+        
+        if (!QuestsStore || !api) {
+            throw new Error('Не удалось найти модули');
+        }
         
         log.success("API Discord успешно подключен!");
     } catch (e) {
         log.error("Ошибка: Скрипт работает только в Desktop App.");
+        console.error(e);
         return;
     }
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // === ЛОГИКА СПУФИНГА ===
+    // === ФУНКЦИЯ ДЛЯ НАЧАЛА КВЕСТА ===
+    async function enrollQuest(questId) {
+        try {
+            const res = await api.post({url: `/quests/${questId}/enroll`});
+            log.success(`Квест начат!`);
+            return true;
+        } catch (e) {
+            log.warn(`Не удалось начать квест: ${e}`);
+            return false;
+        }
+    }
+
+    // === ВИДЕО КВЕСТЫ ===
     async function spoofVideoQuest(quest, taskName, secondsNeeded) {
         const questName = quest.config.messages.questName;
         let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
-
-        log.info(`📹 Запуск видео: "${questName}"`);
+        const isMobile = taskName === "WATCH_VIDEO_ON_MOBILE";
         
-        const speed = 7; 
+        log.info(`${isMobile ? '📱' : '💻'} Запуск видео: "${questName}"`);
+        
+        const speed = 7;
         let completed = false;
 
         while (true) {
@@ -70,30 +85,50 @@
 
             const timestamp = secondsDone + speed;
             try {
-                const res = await api.post({
-                    url: `/quests/${quest.id}/video-progress`, 
-                    body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}
-                });
-                
+                const options = {
+                    url: `/quests/${quest.id}/video-progress`,
+                    body: { timestamp: Math.min(secondsNeeded, timestamp + Math.random()) }
+                };
+
+                if (isMobile) {
+                    options.headers = {
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Discord/200.0',
+                        'X-Discord-Platform': 'mobile'
+                    };
+                }
+
+                const res = await api.post(options);
                 completed = res.body.completed_at != null;
                 secondsDone = Math.min(secondsNeeded, timestamp);
 
-                log.progress(Math.floor(secondsDone), secondsNeeded, `⏱️ Просмотр`);
+                log.progress(Math.floor(secondsDone), secondsNeeded, `⏱️ ${isMobile ? 'Моб. просмотр' : 'Просмотр'}`);
                 
                 if (timestamp >= secondsNeeded) break;
             } catch (e) {
                 log.warn(`Ошибка отправки, пробуем снова...`);
+                await sleep(2000);
             }
         }
 
         if (!completed) {
-            await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: secondsNeeded}});
+            const options = {
+                url: `/quests/${quest.id}/video-progress`,
+                body: { timestamp: secondsNeeded }
+            };
+            if (isMobile) {
+                options.headers = {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Discord/200.0',
+                    'X-Discord-Platform': 'mobile'
+                };
+            }
+            await api.post(options);
         }
         
-        log.success(`Видео "${questName}" засчитано через API!`);
+        log.success(`${isMobile ? '📱 Мобильное видео' : '💻 Видео'} "${questName}" засчитано!`);
         return true;
     }
 
+    // === ИГРОВЫЕ КВЕСТЫ ===
     async function spoofGameQuest(quest, taskName, secondsNeeded) {
         const questName = quest.config.messages.questName;
         const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
@@ -105,7 +140,7 @@
             return false;
         }
 
-        log.info(`🎮 Запуск игры: "${questName}" (Спуфинг 15 минут)`);
+        log.info(`🎮 Запуск игры: "${questName}"`);
         const pid = Math.floor(Math.random() * 30000) + 1000;
 
         try {
@@ -116,9 +151,16 @@
             const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "");
             const fakeGame = {
                 cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
-                exeName: exeName, exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
-                hidden: false, isLauncher: false, id: applicationId, name: appData.name,
-                pid: pid, pidPath: [pid], processName: appData.name, start: Date.now(),
+                exeName: exeName,
+                exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
+                hidden: false,
+                isLauncher: false,
+                id: applicationId,
+                name: appData.name,
+                pid: pid,
+                pidPath: [pid],
+                processName: appData.name,
+                start: Date.now(),
             };
 
             const realGames = RunningGameStore.getRunningGames();
@@ -132,8 +174,6 @@
             return new Promise((resolve) => {
                 let fn = (data) => {
                     let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress[taskName]?.value || 0);
-                    
-                    // Форматированный вывод прогресса (без спиннера, без ошибок)
                     console.log(`   ${c.cyan}[ ИГРА ]${c.reset} ${questName}: ${c.yellow}${progress}${c.reset}/${c.gray}${secondsNeeded}${c.reset}`);
                     
                     if(progress >= secondsNeeded) {
@@ -154,40 +194,148 @@
         }
     }
 
+    // === PLAY_ACTIVITY КВЕСТЫ ===
+    async function spoofPlayActivityQuest(quest, taskName, secondsNeeded) {
+        const questName = quest.config.messages.questName;
+        const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
+        const taskData = taskConfig.tasks[taskName];
+        const applicationId = quest.config.application?.id ?? taskData.applications?.[0]?.id;
+
+        if(!applicationId) {
+            log.warn(`Нет App ID для "${questName}"`);
+            return false;
+        }
+
+        log.info(`🎮 Запуск PLAY_ACTIVITY: "${questName}"`);
+        const pid = Math.floor(Math.random() * 30000) + 1000;
+
+        try {
+            const res = await api.get({url: `/applications/public?application_ids=${applicationId}`});
+            const appData = res.body[0];
+            if(!appData) return false;
+
+            const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "");
+            const fakeGame = {
+                cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
+                exeName: exeName,
+                exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
+                hidden: false,
+                isLauncher: false,
+                id: applicationId,
+                name: appData.name,
+                pid: pid,
+                pidPath: [pid],
+                processName: appData.name,
+                start: Date.now(),
+            };
+
+            const realGames = RunningGameStore.getRunningGames();
+            const realGetRunningGames = RunningGameStore.getRunningGames;
+            const realGetGameForPID = RunningGameStore.getGameForPID;
+
+            RunningGameStore.getRunningGames = () => [fakeGame];
+            RunningGameStore.getGameForPID = (pid) => [fakeGame].find(x => x.pid === pid);
+            FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: [fakeGame]});
+
+            return new Promise((resolve) => {
+                let fn = (data) => {
+                    let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress[taskName]?.value || 0);
+                    console.log(`   ${c.cyan}[ PLAY_ACTIVITY ]${c.reset} ${questName}: ${c.yellow}${progress}${c.reset}/${c.gray}${secondsNeeded}${c.reset}`);
+                    
+                    if(progress >= secondsNeeded) {
+                        RunningGameStore.getRunningGames = realGetRunningGames;
+                        RunningGameStore.getGameForPID = realGetGameForPID;
+                        FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: []});
+                        FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
+                        log.success(`PLAY_ACTIVITY "${questName}" засчитан!`);
+                        resolve(true);
+                    }
+                };
+                FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn);
+                setTimeout(() => resolve(false), 45000);
+            });
+        } catch (e) {
+            log.error(`Ошибка PLAY_ACTIVITY: ${e}`);
+            return false;
+        }
+    }
+
     // === ОСНОВНОЙ ЦИКЛ ===
     async function runQuestCycle() {
-        log.head("Сканирование активных квестов");
+        log.head("Сканирование доступных квестов");
         
         const supportedTasks = ["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE", "PLAY_ON_DESKTOP", "PLAY_ACTIVITY"];
         
-        let quests = [...QuestsStore.quests.values()].filter(x => 
-            x.userStatus?.enrolledAt && 
-            !x.userStatus?.completedAt && 
+        // Ищем ВСЕ доступные квесты (не начатые ИЛИ активные)
+        let allQuests = [...QuestsStore.quests.values()].filter(x => 
             new Date(x.config.expiresAt).getTime() > Date.now() && 
             supportedTasks.find(y => Object.keys((x.config.taskConfig ?? x.config.taskConfigV2).tasks).includes(y))
         );
 
-        if(quests.length === 0) {
-            log.info("Нет активных квестов! Все свободны.");
+        // Разделяем на доступные (не начатые) и активные
+        let availableQuests = allQuests.filter(x => !x.userStatus?.enrolledAt);
+        let activeQuests = allQuests.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt);
+
+        console.log(`\n${c.cyan}📋 Доступные квесты: ${availableQuests.length}`);
+        console.log(`${c.green}▶️ Активные квесты: ${activeQuests.length}`);
+
+        if (availableQuests.length > 0) {
+            console.log(`\n${c.yellow}Доступные квесты для начала:${c.reset}`);
+            availableQuests.forEach(q => {
+                console.log(`   ${c.gray}•${c.reset} ${q.config.messages.questName}`);
+            });
+        }
+
+        if (activeQuests.length > 0) {
+            console.log(`\n${c.green}Активные квесты для выполнения:${c.reset}`);
+            activeQuests.forEach(q => {
+                console.log(`   ${c.gray}•${c.reset} ${q.config.messages.questName}`);
+            });
+        }
+
+        // Сначала обрабатываем активные квесты
+        let questsToProcess = [...activeQuests];
+        
+        // Если есть доступные - пытаемся их начать
+        for (const quest of availableQuests) {
+            log.head(`📝 Начинаем квест: ${quest.config.messages.questName}`);
+            const enrolled = await enrollQuest(quest.id);
+            if (enrolled) {
+                questsToProcess.push(quest);
+                await sleep(2000);
+            }
+        }
+
+        if (questsToProcess.length === 0) {
+            log.info("Нет квестов для выполнения!");
             return;
         }
 
         let processedCount = 0;
 
-        for (const quest of quests) {
+        for (const quest of questsToProcess) {
             const questName = quest.config.messages.questName;
             const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
             const taskName = supportedTasks.find(x => taskConfig.tasks[x] != null);
+            
+            if (!taskName) {
+                log.warn(`Не найден поддерживаемый тип задачи для "${questName}"`);
+                continue;
+            }
+            
             const taskData = taskConfig.tasks[taskName];
             const secondsNeeded = taskData.target;
 
-            log.head(`🕹️ Квест: ${questName}`);
+            log.head(`🕹️ Квест: ${questName} (${taskName})`);
 
             if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
                 await spoofVideoQuest(quest, taskName, secondsNeeded);
                 processedCount++;
-            } else if (taskName === "PLAY_ON_DESKTOP" || taskName === "PLAY_ACTIVITY") {
+            } else if (taskName === "PLAY_ON_DESKTOP") {
                 const result = await spoofGameQuest(quest, taskName, secondsNeeded);
+                if (result) processedCount++;
+            } else if (taskName === "PLAY_ACTIVITY") {
+                const result = await spoofPlayActivityQuest(quest, taskName, secondsNeeded);
                 if (result) processedCount++;
             } else {
                 log.warn(`Не поддерживается: ${taskName}`);
@@ -196,11 +344,10 @@
             await sleep(3000);
         }
 
-        // ФИНАЛЬНЫЙ БЛОК (Огромный и яркий, чтобы было видно в конце)
         console.log(`\n${c.bright}${c.green}═══════════════════════════════════${c.reset}`);
         console.log(`${c.bright}${c.green}       ✅ ВСЕ КВЕСТЫ ОБРАБОТАНЫ!       ${c.reset}`);
         console.log(`${c.bright}${c.green}═══════════════════════════════════${c.reset}`);
-        console.log(`${c.gray}  Обработано через API: ${c.yellow}${processedCount}${c.reset} ${c.gray}квестов.${c.reset}`);
+        console.log(`${c.gray}  Обработано: ${c.yellow}${processedCount}${c.reset} ${c.gray}квестов.${c.reset}`);
         console.log(`${c.gray}  💡 Обновите страницу (F5) и нажмите Claim Reward вручную.${c.reset}\n`);
     }
 
